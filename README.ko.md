@@ -88,4 +88,4 @@ Order
 
 ## 라이선스
 
-[MIT](LICENSE) © eehgnod
+[MIT](LICENSE) © jeong-donghee

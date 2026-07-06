@@ -93,4 +93,4 @@ adapts (black/white) to the background for contrast.
 
 ## License
 
-[MIT](LICENSE) © eehgnod
+[MIT](LICENSE) © jeong-donghee
