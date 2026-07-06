@@ -7,7 +7,7 @@ plugins {
 }
 
 group = "io.github.jeongdonghee"
-version = "0.1.0-SNAPSHOT"
+version = "0.1.0"
 
 repositories {
     mavenCentral()
@@ -46,4 +46,9 @@ intellijPlatform {
             sinceBuild = providers.gradleProperty("pluginSinceBuild")
         }
     }
+}
+
+// 설정 검색 인덱스 생성 태스크는 헤드리스 IDE 를 띄워 runIde 샌드박스와 충돌한다. 선택사항이라 끈다.
+tasks.named("buildSearchableOptions") {
+    enabled = false
 }

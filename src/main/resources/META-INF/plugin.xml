@@ -4,9 +4,43 @@
     <vendor email="weg9511@gmail.com" url="https://github.com/jeong-donghee">jeong-donghee</vendor>
 
     <description><![CDATA[
-        Spring Data JPA repository 메서드에 마우스를 올리면, 그 메서드 실행 시 실제로 로딩되는
-        연관 엔티티를 fetch 전략별 색으로 보여준다. (LAZY=빨강, fetch join/@EntityGraph=초록, EAGER=노랑)
+        Hover over a Spring Data JPA repository method to see which associated entities that
+        query actually loads — shown as a color-coded tree right below the method's Java
+        documentation. What the method name hides — N+1 risks, over-fetching, or a LAZY field
+        that is loaded eagerly anyway — becomes visible without leaving the editor.
+
+        <ul>
+          <li><b>Per-method fetch tree</b> — the queried entity and the associations that get
+              loaded, nested by what is actually fetched.</li>
+          <li><b>Color-coded by effective fetch:</b> green = pulled by this query
+              (<code>join fetch</code> / <code>@EntityGraph</code>), yellow = EAGER mapping,
+              red = LAZY (proxy, potential N+1).</li>
+          <li><b>Reads mappings and query together:</b>
+              <code>@ManyToOne</code>/<code>@OneToOne</code>/<code>@OneToMany</code>/<code>@ManyToMany</code>
+              (Jakarta and javax), <code>@Query</code> <code>join fetch</code> with alias resolution,
+              and <code>@EntityGraph(attributePaths)</code>.</li>
+          <li><b>Expands what is loaded</b> — eagerly loaded or fetched associations are expanded
+              to their own associations, so you follow the real object graph one hover deep.</li>
+          <li><b>Flags a pitfall</b> — a non-owning <code>@OneToOne</code> declared
+              <code>LAZY</code> is loaded EAGER by Hibernate, and is marked accordingly.</li>
+          <li><b>Back-references</b> to an already-loaded parent are shown without color, since
+              navigating to them triggers no extra query.</li>
+          <li><b>Configurable colors</b> under Settings | Tools | JPA Fetch Lens.</li>
+        </ul>
+
+        Cardinality is shown as N-1, 1-N, 1-1, N-M. Requires IntelliJ IDEA Ultimate for its
+        bundled JPA support.
+
+        <p><a href="https://github.com/jeong-donghee/jpa-fetch-lens">Source code and issue tracker on GitHub</a></p>
     ]]></description>
+
+    <change-notes><![CDATA[
+        <ul>
+          <li><b>0.1.0</b> — Initial release. Per-method fetch tree on hover, color coding by
+              effective fetch, <code>@Query</code> join fetch and <code>@EntityGraph</code> detection,
+              non-owning <code>@OneToOne</code> LAZY pitfall warning, and configurable colors.</li>
+        </ul>
+    ]]></change-notes>
 
     <!-- 플랫폼 코어 + 자바 지원(PSI). JPA 번들은 v1 2단계에서 추가 예정. -->
     <depends>com.intellij.modules.platform</depends>
