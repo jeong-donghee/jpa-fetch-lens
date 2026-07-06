@@ -64,13 +64,6 @@ public final class FetchGraphDocumentationProvider extends AbstractDocumentation
         sb.append("<tr><td><b>").append(escape(graph.rootEntity())).append("</b></td></tr>");
         renderEdges(sb, graph.edges(), 0);
         sb.append("</table>");
-
-        // 범례: 색 배경 + 흰 글씨의 LAZY / EAGER / FETCH.
-        sb.append("<p>")
-            .append(chip(FetchColor.LAZY)).append(" &nbsp; ")
-            .append(chip(FetchColor.EAGER)).append(" &nbsp; ")
-            .append(chip(FetchColor.FETCH_JOINED))
-            .append("</p>");
         return sb.toString();
     }
 
@@ -80,7 +73,7 @@ public final class FetchGraphDocumentationProvider extends AbstractDocumentation
      */
     private void renderEdges(StringBuilder sb, List<FetchEdge> edges, int depth) {
         for (FetchEdge edge : edges) {
-            String label = escape(edge.targetEntity()) + ": " + escape(edge.associationName());
+            String label = "<b>" + escape(edge.targetEntity()) + "</b>: " + escape(edge.associationName());
             sb.append("<tr><td>").append(indent(depth))
                 .append("<span style=\"color:#888\">").append(edge.kind().label()).append("</span> ");
             if (edge.backReference()) {
@@ -88,6 +81,10 @@ public final class FetchGraphDocumentationProvider extends AbstractDocumentation
                 sb.append("<span style=\"color:#888\">").append(label).append("</span>");
             } else {
                 sb.append(chipText(edge.color(), label));
+                // 선언 LAZY지만 실제 EAGER (@OneToOne 비소유 함정) 경고.
+                if (edge.lazyButEager() && edge.color() == FetchColor.EAGER) {
+                    sb.append(" <span style=\"color:#E53935\">LAZY ignored &rarr; loads EAGER</span>");
+                }
             }
             sb.append("</td></tr>");
             renderEdges(sb, edge.children(), depth + 1);
@@ -98,14 +95,10 @@ public final class FetchGraphDocumentationProvider extends AbstractDocumentation
         return "&nbsp;".repeat((depth + 1) * 5) + "ㄴ&nbsp;";
     }
 
-    /** 범례용: 색 배경 + 흰 글씨로 감싼 라벨 단어. */
-    private String chip(FetchColor color) {
-        return chipText(color, color.label());
-    }
-
-    /** 텍스트를 fetch 색 배경 + 흰 글씨로 감싼다. */
+    /** 텍스트를 fetch 색 배경으로 감싼다. 밝은 배경(EAGER 노랑)은 검은 글씨, 나머진 흰 글씨. */
     private String chipText(FetchColor color, String text) {
-        return "<span style=\"background-color:" + color.hex() + ";color:#ffffff\">&nbsp;"
+        String fg = color == FetchColor.EAGER ? "#000000" : "#ffffff";
+        return "<span style=\"background-color:" + color.hex() + ";color:" + fg + "\">&nbsp;"
             + text + "&nbsp;</span>";
     }
 

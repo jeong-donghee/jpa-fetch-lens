@@ -127,7 +127,7 @@ public final class RepositoryMethodAnalyzer {
             }
 
             String targetName = target != null ? target.getName() : "?";
-            edges.add(new FetchEdge(name, assoc.kind(), targetName, color, backReference, children));
+            edges.add(new FetchEdge(name, assoc.kind(), targetName, color, assoc.lazyButEager(), backReference, children));
         }
         return edges;
     }
@@ -194,11 +194,20 @@ public final class RepositoryMethodAnalyzer {
             return null;
         }
 
-        boolean eager = fetchEager(ann, defaultEager);
+        String mappedBy = readMappedBy(ann);
+        String fetchText = fetchText(ann);
+        boolean explicitLazy = fetchText != null && fetchText.contains("LAZY");
+        boolean explicitEager = fetchText != null && fetchText.contains("EAGER");
+
+        // @OneToOne 비소유(mappedBy) 쪽 + 선언 LAZY = 실제로는 EAGER 로 로딩되는 함정.
+        boolean lazyButEager = kind == RelationKind.ONE_TO_ONE && mappedBy != null && explicitLazy;
+
+        boolean eager = explicitEager || lazyButEager || (!explicitLazy && defaultEager);
+
         PsiClass target = toMany
             ? firstTypeArgClass(field.getType())
             : PsiUtil.resolveClassInClassTypeOnly(field.getType());
-        return new Association(kind, eager, target, readMappedBy(ann));
+        return new Association(kind, eager, target, mappedBy, lazyButEager);
     }
 
     /** 연관 애노테이션의 mappedBy 값 (비어 있으면 null = owning 측). */
@@ -207,17 +216,10 @@ public final class RepositoryMethodAnalyzer {
         return (value == null || value.isEmpty()) ? null : value;
     }
 
-    /** fetch 명시값이 있으면 그걸, 없으면 매핑 규칙 기본값. */
-    private boolean fetchEager(@NotNull PsiAnnotation ann, boolean defaultEager) {
+    /** 연관 애노테이션의 fetch 속성 텍스트 (예: "FetchType.LAZY"), 없으면 null. */
+    private @Nullable String fetchText(@NotNull PsiAnnotation ann) {
         PsiAnnotationMemberValue value = ann.findAttributeValue("fetch");
-        String text = value != null ? value.getText() : null;
-        if (text != null && text.contains("EAGER")) {
-            return true;
-        }
-        if (text != null && text.contains("LAZY")) {
-            return false;
-        }
-        return defaultEager;
+        return value != null ? value.getText() : null;
     }
 
     /** 이 메서드가 당기는 연관 경로들 (@EntityGraph attributePaths + @Query join fetch). */
@@ -339,7 +341,8 @@ public final class RepositoryMethodAnalyzer {
         return null;
     }
 
-    private record Association(RelationKind kind, boolean eager, PsiClass target, String mappedBy) {
+    private record Association(RelationKind kind, boolean eager, PsiClass target, String mappedBy,
+                               boolean lazyButEager) {
     }
 
     /** 자식 엔티티로 내려오게 한 상위 연관 정보 (진짜 역참조 판정용). */
