@@ -1,0 +1,22 @@
+<idea-plugin>
+    <id>io.github.jeongdonghee.jpafetchlens</id>
+    <name>JPA Fetch Lens</name>
+    <vendor email="weg9511@gmail.com" url="https://github.com/jeong-donghee">jeong-donghee</vendor>
+
+    <description><![CDATA[
+        Spring Data JPA repository 메서드에 마우스를 올리면, 그 메서드 실행 시 실제로 로딩되는
+        연관 엔티티를 fetch 전략별 색으로 보여준다. (LAZY=빨강, fetch join/@EntityGraph=초록, EAGER=노랑)
+    ]]></description>
+
+    <!-- 플랫폼 코어 + 자바 지원(PSI). JPA 번들은 v1 2단계에서 추가 예정. -->
+    <depends>com.intellij.modules.platform</depends>
+    <depends>com.intellij.modules.java</depends>
+
+    <extensions defaultExtensionNs="com.intellij">
+        <!-- 자바 요소에 hover 하면 이 클래스가 문서(HTML)를 만들어 팝업에 렌더한다. -->
+        <lang.documentationProvider
+            language="JAVA"
+            order="first"
+            implementationClass="io.github.jeongdonghee.jpafetchlens.doc.FetchGraphDocumentationProvider"/>
+    </extensions>
+</idea-plugin>
