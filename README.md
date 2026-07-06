@@ -1,67 +1,96 @@
 # JPA Fetch Lens
 
-IntelliJ IDEA 플러그인. Spring Data JPA **repository 메서드에 마우스를 올리면**, 그 메서드를
-실행했을 때 실제로 로딩되는 연관 엔티티를 **fetch 전략별 색 트리**로 보여준다.
+English | [한국어](README.ko.md)
 
-메서드 이름만 봐서는 안 보이는 "이 쿼리가 뭘 같이 당겨오는지 / 어떤 게 LAZY라 N+1 위험인지"를
-hover 한 번으로 드러내는 것이 목표다.
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-## 보이는 것
+> Hover over a Spring Data JPA repository method to see, as a color-coded tree, which
+> associated entities that query actually loads.
 
-기본 Java 문서(시그니처·Javadoc) **아래에** fetch 트리가 붙는다. 예 —
-`@Query("select o from Order o join fetch o.items i join fetch i.product")` 에 hover 하면:
+![JPA Fetch Lens preview](docs/preview.svg)
+
+What the method name hides — N+1 risks, over-fetching, or a `LAZY` field that Hibernate loads
+eagerly anyway — becomes visible without leaving the editor. The tree is appended right below
+the method's normal Java documentation on hover.
+
+## Features
+
+- **Per-method fetch tree** — the queried entity and the associations that get loaded, nested
+  by what is actually fetched.
+- **Color-coded by effective fetch** — green = pulled by this query (`join fetch` /
+  `@EntityGraph`), yellow = EAGER mapping, red = LAZY (proxy, potential N+1).
+- **Reads mappings and query together** — `@ManyToOne` / `@OneToOne` / `@OneToMany` /
+  `@ManyToMany` (Jakarta and javax), `@Query` `join fetch` with alias resolution, and
+  `@EntityGraph(attributePaths)`.
+- **Expands what is loaded** — eagerly loaded or fetched associations expand to their own
+  associations, so you follow the real object graph one hover deep.
+- **Flags a pitfall** — a non-owning `@OneToOne` declared `LAZY` is loaded EAGER by Hibernate,
+  and is marked accordingly.
+- **Back-references** to an already-loaded parent are shown without color, since navigating to
+  them triggers no extra query.
+- **Configurable colors** — Settings | Tools | JPA Fetch Lens.
+
+## Installation
+
+- **From the IDE:** Settings/Preferences → Plugins → Marketplace → search **JPA Fetch Lens** → Install.
+- **Manually:** download the plugin ZIP, then Plugins → ⚙ → *Install Plugin from Disk…*
+
+Works in IntelliJ IDEA **Community and Ultimate** — it relies on Java PSI, so no dedicated JPA
+plugin is required, just a project with JPA / Spring Data JPA on the classpath.
+
+## Usage
+
+Hover over a repository method. For example, with:
+
+```java
+@Query("select o from Order o join fetch o.items i join fetch i.product")
+List<Order> findAllWithItems();
+```
 
 ```
 Order
-     ㄴ N-1  Customer: customer                     (빨강, LAZY)
-     ㄴ 1-N  OrderItem: items                       (초록, FETCH)
-          ㄴ N-1  Order: order                      (회색, 역참조)
-          ㄴ N-1  Product: product                  (초록, FETCH)
-     ㄴ 1-1  ShippingInfo: shipping   LAZY ignored → loads EAGER   (노랑)
+     └ N-1  Customer: customer                    (red,   LAZY)
+     └ 1-N  OrderItem: items                      (green, FETCH)
+          └ N-1  Order: order                     (gray,  back-reference)
+          └ N-1  Product: product                 (green, FETCH)
+     └ 1-1  ShippingInfo: shipping   LAZY ignored → loads EAGER   (yellow)
 ```
 
-- 루트 = repository 의 도메인 엔티티. 그 아래로 `카디널리티 대상엔티티: 필드`.
-- 카디널리티: `N-1`(@ManyToOne) · `1-N`(@OneToMany) · `1-1`(@OneToOne) · `N-M`(@ManyToMany)
+Cardinality is shown as `N-1` (@ManyToOne), `1-N` (@OneToMany), `1-1` (@OneToOne),
+`N-M` (@ManyToMany).
 
-### 색의 의미
+### Color legend
 
-| 색 | 뜻 |
-|----|----|
-| 🟢 초록 | 이 메서드가 `@Query` join fetch 또는 `@EntityGraph`로 **명시적으로 당김** |
-| 🟡 노랑 | 매핑이 **EAGER** → 쿼리와 무관하게 항상 로딩 |
-| 🔴 빨강 | **LAZY** → 프록시. 접근 시 추가 쿼리 (N+1 위험) |
-| ⚪ 회색(색 없음) | **역참조** — 방금 타고 온 상위로 되돌아감. 이미 로딩돼 있어 접근해도 쿼리 없음 |
+| Color | Meaning |
+|-------|---------|
+| 🟢 Green | Pulled by this query (`@Query` join fetch or `@EntityGraph`) |
+| 🟡 Yellow | EAGER mapping — always loaded, regardless of the query |
+| 🔴 Red | LAZY — a proxy; touching it triggers another query (N+1 risk) |
+| ⚪ No color | Back-reference to an already-loaded parent; no query on access |
 
-- **로딩되는(초록·노랑) 연관만 그 하위까지 재귀로 펼친다.** LAZY(빨강)는 잎으로만.
-- `LAZY ignored → loads EAGER` 경고: `@OneToOne`의 **비소유(mappedBy) 쪽**에 `fetch=LAZY`를
-  줘도 Hibernate는 이를 무시하고 EAGER로 로딩한다. 이 함정을 노랑 + 경고로 표시한다.
+Only loaded (green/yellow) associations are expanded to their own associations; LAZY ones are leaves.
 
-## 무엇을 읽나
+## Configuration
 
-- 뿌리 엔티티의 `@ManyToOne`/`@OneToOne`/`@OneToMany`/`@ManyToMany` (jakarta·javax 모두)
-- 각 연관의 `fetch` 명시값, 없으면 매핑 기본값(to-one EAGER / to-many LAZY)
-- 메서드의 `@EntityGraph(attributePaths = ...)`
-- 메서드의 `@Query` JPQL 안 `join fetch` (별칭 체인 해석해 다단계 경로까지)
+**Settings → Tools → JPA Fetch Lens** lets you pick the LAZY / EAGER / FETCH colors. Text color
+adapts (black/white) to the background for contrast.
 
-## 설정
+## Limitations
 
-**Settings → Tools → JPA Fetch Lens** 에서 LAZY / EAGER / FETCH **색을 직접 지정**할 수 있다.
-글자색은 배경 밝기에 따라 자동으로 검정/흰색이 된다.
+- **Runtime factors are not reflected.** An entity already in the persistence context / L2 cache
+  won't trigger a query even if LAZY, and `@BatchSize` / `default_batch_fetch_size` change how
+  LAZY loads. Verify actual behavior with Hibernate SQL logging.
+- `@Query(nativeQuery = true)` is not analyzed (it is SQL, outside the mapping).
+- `@NamedEntityGraph` (by-name reference) is not yet supported — only inline `attributePaths`.
+- Associations mapped on getters (property access) are not yet supported.
 
-## 한계 (정적 분석의 경계)
-
-- **런타임 요인은 반영 못 함**: 1차/2차 캐시에 이미 있으면 LAZY여도 쿼리가 안 나가고,
-  `@BatchSize`·`default_batch_fetch_size`는 로딩 방식을 바꾼다. 실제 확인은 Hibernate SQL 로그로.
-- `@Query(nativeQuery = true)` 는 분석하지 않는다 (SQL 이라 매핑 밖).
-- `@NamedEntityGraph`(이름 참조 방식)는 아직 미지원 — 인라인 `attributePaths`만.
-- 연관이 필드가 아니라 게터(property 접근)에 매핑된 경우는 아직 미지원.
-
-## 개발
-
-> **IntelliJ IDEA Community 또는 Ultimate.** 순수 Java PSI 로 동작하므로(전용 JPA 플러그인 비의존)
-> Community 에서도 된다. 단, 분석 대상 프로젝트에 JPA / Spring Data JPA 의존과 애노테이션이 있어야 한다.
+## Development
 
 ```bash
-./gradlew runIde       # 샌드박스 IDE로 실제 확인
-./gradlew buildPlugin  # 마켓플레이스 배포용 zip
+./gradlew runIde       # launch a sandbox IDE with the plugin
+./gradlew buildPlugin  # build the distributable ZIP
 ```
+
+## License
+
+[MIT](LICENSE) © eehgnod
