@@ -8,6 +8,7 @@ import io.github.jeongdonghee.jpafetchlens.analyzer.RepositoryMethodAnalyzer;
 import io.github.jeongdonghee.jpafetchlens.model.FetchColor;
 import io.github.jeongdonghee.jpafetchlens.model.FetchEdge;
 import io.github.jeongdonghee.jpafetchlens.model.FetchGraph;
+import io.github.jeongdonghee.jpafetchlens.settings.FetchLensSettings;
 import org.jetbrains.annotations.Nullable;
 
 import java.util.List;
@@ -95,11 +96,22 @@ public final class FetchGraphDocumentationProvider extends AbstractDocumentation
         return "&nbsp;".repeat((depth + 1) * 5) + "ㄴ&nbsp;";
     }
 
-    /** 텍스트를 fetch 색 배경으로 감싼다. 밝은 배경(EAGER 노랑)은 검은 글씨, 나머진 흰 글씨. */
+    /** 텍스트를 fetch 색(사용자 설정) 배경으로 감싼다. 글자색은 배경 밝기로 자동 대비. */
     private String chipText(FetchColor color, String text) {
-        String fg = color == FetchColor.EAGER ? "#000000" : "#ffffff";
-        return "<span style=\"background-color:" + color.hex() + ";color:" + fg + "\">&nbsp;"
+        String bg = FetchLensSettings.getInstance().hex(color);
+        return "<span style=\"background-color:" + bg + ";color:" + contrastText(bg) + "\">&nbsp;"
             + text + "&nbsp;</span>";
+    }
+
+    /** 배경 hex 의 밝기로 검정/흰색 글자색 결정 (밝으면 검정). */
+    private String contrastText(String hex) {
+        try {
+            java.awt.Color c = java.awt.Color.decode(hex);
+            double luminance = 0.299 * c.getRed() + 0.587 * c.getGreen() + 0.114 * c.getBlue();
+            return luminance > 150 ? "#000000" : "#ffffff";
+        } catch (NumberFormatException e) {
+            return "#ffffff";
+        }
     }
 
     private String escape(String s) {

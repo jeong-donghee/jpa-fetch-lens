@@ -18,5 +18,12 @@
             language="JAVA"
             order="first"
             implementationClass="io.github.jeongdonghee.jpafetchlens.doc.FetchGraphDocumentationProvider"/>
+
+        <!-- Settings → Tools → JPA Fetch Lens (색 설정) -->
+        <applicationConfigurable
+            parentId="tools"
+            id="io.github.jeongdonghee.jpafetchlens.settings.FetchLensConfigurable"
+            instance="io.github.jeongdonghee.jpafetchlens.settings.FetchLensConfigurable"
+            displayName="JPA Fetch Lens"/>
     </extensions>
 </idea-plugin>
