@@ -1,7 +1,7 @@
 <idea-plugin>
     <id>io.github.jeongdonghee.jpafetchlens</id>
     <name>JPA Fetch Lens</name>
-    <vendor email="weg9511@gmail.com" url="https://github.com/jeong-donghee">jeong-donghee</vendor>
+    <vendor email="weg9511@gmail.com" url="https://github.com/jeong-donghee">eehgnod</vendor>
 
     <description><![CDATA[
         <p><img src="https://cdn.jsdelivr.net/gh/jeong-donghee/jpa-fetch-lens@main/docs/preview.svg" width="600" alt="JPA Fetch Lens shows a color-coded fetch tree when you hover over a repository method"></p>
