@@ -21,13 +21,6 @@ public final class FetchGraphDocumentationProvider extends AbstractDocumentation
 
     private final RepositoryMethodAnalyzer analyzer = new RepositoryMethodAnalyzer();
 
-    // 연관 분석(3~5단계) 전까지 색상 렌더가 살아있는지 확인하기 위한 임시 엣지.
-    private static final List<FetchEdge> DEMO_EDGES = List.of(
-        new FetchEdge("team", "Team", FetchColor.LAZY),
-        new FetchEdge("orders", "Order", FetchColor.FETCH_JOINED),
-        new FetchEdge("profile", "Profile", FetchColor.EAGER)
-    );
-
     // hover 팝업 경로.
     @Override
     public @Nullable String generateHoverDoc(@Nullable PsiElement element, @Nullable PsiElement originalElement) {
@@ -59,9 +52,8 @@ public final class FetchGraphDocumentationProvider extends AbstractDocumentation
 
         List<FetchEdge> edges = graph.edges();
         if (edges.isEmpty()) {
-            // 3단계(연관 수집) 전까지는 데모 색상으로 대체.
-            sb.append("<i>(연관 분석은 다음 단계 &mdash; 아래는 데모 색상)</i><br>");
-            edges = DEMO_EDGES;
+            sb.append("<i>(연관 없음)</i>");
+            return sb.toString();
         }
         for (FetchEdge edge : edges) {
             sb.append(edgeLine(graph.rootEntity(), edge.targetEntity(), edge.associationName(), edge.color()));
