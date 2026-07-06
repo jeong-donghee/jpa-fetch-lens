@@ -4,6 +4,8 @@
     <vendor email="weg9511@gmail.com" url="https://github.com/jeong-donghee">jeong-donghee</vendor>
 
     <description><![CDATA[
+        <p><img src="https://cdn.jsdelivr.net/gh/jeong-donghee/jpa-fetch-lens@main/docs/preview.svg" width="600" alt="JPA Fetch Lens shows a color-coded fetch tree when you hover over a repository method"></p>
+
         Hover over a Spring Data JPA repository method to see which associated entities that
         query actually loads — shown as a color-coded tree right below the method's Java
         documentation. What the method name hides — N+1 risks, over-fetching, or a LAZY field
