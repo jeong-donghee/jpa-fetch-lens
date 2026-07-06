@@ -8,15 +8,16 @@ hover 한 번으로 드러내는 것이 목표다.
 
 ## 보이는 것
 
-기본 Java 문서(시그니처·Javadoc) **아래에** fetch 트리가 붙는다. 예:
+기본 Java 문서(시그니처·Javadoc) **아래에** fetch 트리가 붙는다. 예 —
+`@Query("select o from Order o join fetch o.items i join fetch i.product")` 에 hover 하면:
 
 ```
-PromConfig
-     ㄴ 1-N  [ServerConfig: servers]                         (초록)
-          ㄴ N-1 PromConfig: promConfig                       (회색, 역참조)
-          ㄴ 1-N  [ServerSshConnectionChain: sshConnectionChains]  (빨강)
-          ㄴ 1-N  [GpuConfig: gpuConfigs]                     (노랑, EAGER면 펼침)
-               ㄴ N-1  [GpuConfig: parentGpuConfig]           (자기참조, 실제 색 유지)
+Order
+     ㄴ N-1  Customer: customer                     (빨강, LAZY)
+     ㄴ 1-N  OrderItem: items                       (초록, FETCH)
+          ㄴ N-1  Order: order                      (회색, 역참조)
+          ㄴ N-1  Product: product                  (초록, FETCH)
+     ㄴ 1-1  ShippingInfo: shipping   LAZY ignored → loads EAGER   (노랑)
 ```
 
 - 루트 = repository 의 도메인 엔티티. 그 아래로 `카디널리티 대상엔티티: 필드`.
@@ -42,6 +43,11 @@ PromConfig
 - 메서드의 `@EntityGraph(attributePaths = ...)`
 - 메서드의 `@Query` JPQL 안 `join fetch` (별칭 체인 해석해 다단계 경로까지)
 
+## 설정
+
+**Settings → Tools → JPA Fetch Lens** 에서 LAZY / EAGER / FETCH **색을 직접 지정**할 수 있다.
+글자색은 배경 밝기에 따라 자동으로 검정/흰색이 된다.
+
 ## 한계 (정적 분석의 경계)
 
 - **런타임 요인은 반영 못 함**: 1차/2차 캐시에 이미 있으면 LAZY여도 쿼리가 안 나가고,
@@ -52,7 +58,8 @@ PromConfig
 
 ## 개발
 
-> IntelliJ IDEA **Ultimate** 대상. (JPA 지원이 Ultimate 번들)
+> **IntelliJ IDEA Community 또는 Ultimate.** 순수 Java PSI 로 동작하므로(전용 JPA 플러그인 비의존)
+> Community 에서도 된다. 단, 분석 대상 프로젝트에 JPA / Spring Data JPA 의존과 애노테이션이 있어야 한다.
 
 ```bash
 ./gradlew runIde       # 샌드박스 IDE로 실제 확인

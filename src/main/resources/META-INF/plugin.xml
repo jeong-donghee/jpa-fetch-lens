@@ -30,8 +30,9 @@
           <li><b>Configurable colors</b> under Settings | Tools | JPA Fetch Lens.</li>
         </ul>
 
-        Cardinality is shown as N-1, 1-N, 1-1, N-M. Requires IntelliJ IDEA Ultimate for its
-        bundled JPA support.
+        Cardinality is shown as N-1, 1-N, 1-1, N-M. Works in IntelliJ IDEA Community and Ultimate;
+        it relies on Java PSI, so no dedicated JPA plugin is required — just a project with JPA
+        or Spring Data JPA on the classpath.
 
         <p><a href="https://github.com/jeong-donghee/jpa-fetch-lens">Source code and issue tracker on GitHub</a></p>
     ]]></description>
