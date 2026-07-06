@@ -7,7 +7,7 @@ English | [한국어](README.ko.md)
 > Hover over a Spring Data JPA repository method to see, as a color-coded tree, which
 > associated entities that query actually loads.
 
-![JPA Fetch Lens preview](docs/preview.svg)
+![JPA Fetch Lens](docs/shot-full.png)
 
 What the method name hides — N+1 risks, over-fetching, or a `LAZY` field that Hibernate loads
 eagerly anyway — becomes visible without leaving the editor. The tree is appended right below

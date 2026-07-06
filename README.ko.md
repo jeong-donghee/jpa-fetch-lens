@@ -7,7 +7,7 @@
 > Spring Data JPA repository 메서드에 마우스를 올리면, 그 메서드가 실제로 로딩하는 연관
 > 엔티티를 fetch 전략별 **색 트리**로 보여준다.
 
-![JPA Fetch Lens 미리보기](docs/preview.svg)
+![JPA Fetch Lens](docs/shot-full.png)
 
 메서드 이름만 봐서는 안 보이는 것 — N+1 위험, 과도한 로딩, 또는 `LAZY`로 적었지만 Hibernate가
 EAGER로 당겨오는 함정 — 이 편집기를 떠나지 않고 드러난다. 트리는 hover 시 메서드의 기본 Java
