@@ -17,79 +17,138 @@ import com.intellij.psi.util.TypeConversionUtil;
 import io.github.jeongdonghee.jpafetchlens.model.FetchColor;
 import io.github.jeongdonghee.jpafetchlens.model.FetchEdge;
 import io.github.jeongdonghee.jpafetchlens.model.FetchGraph;
+import io.github.jeongdonghee.jpafetchlens.model.RelationKind;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 /**
  * 플러그인의 두뇌.
- * Spring Data repository 메서드 하나를 받아서 "이 메서드를 실행하면 어떤 연관이
- * 어떤 전략으로 로딩되는가"를 계산해 {@link FetchGraph} 로 돌려준다.
+ * repository 메서드 하나를 받아, 실행 시 로딩되는 연관을 <b>트리</b>로 계산한다.
  *
- * <p>진행: 1) repository 메서드 판별, 2) 뿌리 엔티티 해석, 3) 1단계 연관 수집(매핑 기준 fetch),
- * 4) 이 메서드의 @EntityGraph / @Query join fetch 로 당겨지는 연관을 초록(FETCH_JOINED)으로 = 구현됨.
+ * <p>규칙: 뿌리 엔티티의 1단계 연관을 나열하되, FETCH(fetch join / @EntityGraph)로 당겨진
+ * 연관만 그 대상 엔티티의 연관들로 재귀적으로 펼친다. (LAZY/EAGER 는 잎으로만 표시)
  */
 public final class RepositoryMethodAnalyzer {
 
-    /** 모든 Spring Data repository 의 최상위 마커 인터페이스. */
     private static final String SPRING_DATA_REPOSITORY = "org.springframework.data.repository.Repository";
-
     private static final String ENTITY_GRAPH = "org.springframework.data.jpa.repository.EntityGraph";
     private static final String QUERY = "org.springframework.data.jpa.repository.Query";
 
-    // JPA 연관 애노테이션 — jakarta(Spring Boot 3+) / javax(2.x) 둘 다 대응.
     private static final String[] MANY_TO_ONE  = {"jakarta.persistence.ManyToOne",  "javax.persistence.ManyToOne"};
     private static final String[] ONE_TO_ONE   = {"jakarta.persistence.OneToOne",   "javax.persistence.OneToOne"};
     private static final String[] ONE_TO_MANY  = {"jakarta.persistence.OneToMany",  "javax.persistence.OneToMany"};
     private static final String[] MANY_TO_MANY = {"jakarta.persistence.ManyToMany", "javax.persistence.ManyToMany"};
 
-    // JPQL 의 "join fetch <별칭>.<연관>" 에서 <연관> 을 뽑는다. left/inner join fetch 도 매칭됨.
-    private static final Pattern JOIN_FETCH = Pattern.compile("(?i)join\\s+fetch\\s+\\w+\\.(\\w+)");
+    // "from <Entity> [as] <alias>" 의 루트 별칭.
+    private static final Pattern FROM = Pattern.compile("(?i)\\bfrom\\s+\\w+(?:\\s+as)?\\s+(\\w+)");
+    // "join fetch <별칭>.<연관> [[as] <새별칭>]"
+    private static final Pattern JOIN_FETCH =
+        Pattern.compile("(?i)join\\s+fetch\\s+(\\w+)\\.(\\w+)(?:\\s+(?:as\\s+)?(\\w+))?");
+    private static final Set<String> JPQL_KEYWORDS = Set.of(
+        "join", "left", "right", "inner", "outer", "fetch", "where", "order",
+        "group", "having", "on", "and", "or", "select", "from", "by", "distinct");
 
-    /**
-     * @param method hover 대상 메서드
-     * @return 분석 대상 repository 메서드면 {@link FetchGraph}, 아니면 {@code null}
-     */
+    private static final int MAX_DEPTH = 10;
+
     public @Nullable FetchGraph analyze(@NotNull PsiMethod method) {
-        // 1) repository 메서드인가?
         PsiClass repositoryInterface = repositoryInterfaceOf(method);
         if (repositoryInterface == null) {
             return null;
         }
-
-        // 2) 이 repository 가 다루는 도메인 엔티티(뿌리)는?
         PsiClass rootEntity = resolveDomainType(repositoryInterface);
         if (rootEntity == null) {
             return null;
         }
+        // 이 메서드가 명시적으로 당기는 연관 경로들 (뿌리 기준 점 경로).
+        Set<String> fetchedPaths = fetchOverrides(method);
 
-        // 3) 뿌리 엔티티의 1단계 연관을 매핑 기준 fetch 로 수집.
-        List<FetchEdge> baseEdges = collectAssociations(rootEntity);
-
-        // 4) 이 메서드가 명시적으로 당기는 연관(@EntityGraph / @Query join fetch)은 초록으로 덮어쓴다.
-        Set<String> fetched = fetchOverrides(method);
-        List<FetchEdge> edges = new ArrayList<>(baseEdges.size());
-        for (FetchEdge edge : baseEdges) {
-            FetchColor color = fetched.contains(edge.associationName()) ? FetchColor.FETCH_JOINED : edge.color();
-            edges.add(new FetchEdge(edge.associationName(), edge.targetEntity(), color));
+        // 순환(양방향 EAGER 등) 방지: 현재 경로에서 이미 펼친 엔티티는 다시 안 펼친다.
+        Set<String> visited = new HashSet<>();
+        String rootQName = rootEntity.getQualifiedName();
+        if (rootQName != null) {
+            visited.add(rootQName);
         }
 
+        List<FetchEdge> edges = buildEdges(rootEntity, "", fetchedPaths, visited, 0, null);
         return new FetchGraph(rootEntity.getName(), edges);
     }
 
     /**
-     * method 가 Spring Data repository 인터페이스에 선언돼 있으면 그 인터페이스를, 아니면 null.
+     * 엔티티의 연관들을 엣지로. 실제로 <b>로딩되는</b>(FETCH 또는 EAGER) 엣지는 대상의 연관으로 재귀 확장.
+     * LAZY 는 잎으로만. {@code visited} 로 무한 순환을 막고, {@code trace} 로 진짜 역참조를 가려낸다.
      *
-     * <p>주의: 사용자는 보통 {@code JpaRepository} 를 상속하고, 그게 다시
-     * {@code CrudRepository} → {@code Repository} 로 이어진다. 따라서 직접 상속이 아니라
-     * <b>전이적(transitive)</b> 상속을 확인해야 한다 → {@link InheritanceUtil#isInheritor}.
+     * @param trace 이 엔티티로 내려오게 한 상위 연관 정보(역참조 판정용). 루트에선 null.
      */
+    private @NotNull List<FetchEdge> buildEdges(@NotNull PsiClass entity, @NotNull String prefix,
+                                                @NotNull Set<String> fetchedPaths,
+                                                @NotNull Set<String> visited, int depth,
+                                                @Nullable Trace trace) {
+        List<FetchEdge> edges = new ArrayList<>();
+        if (depth > MAX_DEPTH) {
+            return edges;
+        }
+        for (PsiField field : entity.getAllFields()) {
+            Association assoc = associationOf(field);
+            if (assoc == null) {
+                continue;
+            }
+            String name = field.getName();
+            String fullPath = prefix.isEmpty() ? name : prefix + "." + name;
+
+            boolean fetched = fetchedPaths.contains(fullPath);
+            FetchColor color = fetched
+                ? FetchColor.FETCH_JOINED
+                : (assoc.eager() ? FetchColor.EAGER : FetchColor.LAZY);
+
+            PsiClass target = assoc.target();
+            String qName = target != null ? target.getQualifiedName() : null;
+            // 방금 타고 온 연관의 실제 역방향(같은 부모 인스턴스로 되돌아감)만 진짜 역참조.
+            boolean backReference = isBackReference(trace, name, assoc.mappedBy(), qName);
+
+            List<FetchEdge> children = List.of();
+            boolean loaded = color == FetchColor.FETCH_JOINED || color == FetchColor.EAGER;
+            // 역참조가 아니고, 아직 안 지나온 엔티티일 때만 펼친다(순환 방지).
+            if (loaded && target != null && !backReference && (qName == null || !visited.contains(qName))) {
+                Set<String> next = new HashSet<>(visited);
+                if (qName != null) {
+                    next.add(qName);
+                }
+                Trace childTrace = new Trace(entity.getQualifiedName(), name, assoc.mappedBy());
+                children = buildEdges(target, fullPath, fetchedPaths, next, depth + 1, childTrace);
+            }
+
+            String targetName = target != null ? target.getName() : "?";
+            edges.add(new FetchEdge(name, assoc.kind(), targetName, color, backReference, children));
+        }
+        return edges;
+    }
+
+    /**
+     * 이 필드가 "방금 타고 온 연관의 역방향"(진짜 양방향 역참조)인지.
+     * 자기참조(같은 타입 다른 인스턴스)는 역참조가 아니므로 false.
+     */
+    private boolean isBackReference(@Nullable Trace trace, @NotNull String fieldName,
+                                    @Nullable String fieldMappedBy, @Nullable String targetQName) {
+        if (trace == null || targetQName == null || !targetQName.equals(trace.parentQName())) {
+            return false;
+        }
+        // 상위가 @OneToMany(mappedBy="x") 로 내려왔으면, 자식의 owning 필드 x 가 역참조.
+        if (trace.assocMappedBy() != null && fieldName.equals(trace.assocMappedBy())) {
+            return true;
+        }
+        // 상위가 owning to-one 이었으면, 그 이름을 mappedBy 로 가리키는 자식 컬렉션이 역참조.
+        return trace.assocName() != null && fieldMappedBy != null && fieldMappedBy.equals(trace.assocName());
+    }
+
     private @Nullable PsiClass repositoryInterfaceOf(@NotNull PsiMethod method) {
         PsiClass containing = method.getContainingClass();
         if (containing == null || !containing.isInterface()) {
@@ -101,140 +160,140 @@ public final class RepositoryMethodAnalyzer {
         return containing;
     }
 
-    /**
-     * {@code JpaRepository<PromConfig, Long>} 같은 상속 구조에서 첫 타입 인자(도메인 엔티티)를 해석.
-     *
-     * <p>원리: 마커 {@code Repository<T, ID>} 의 첫 타입 파라미터 T 가,
-     * 이 repository 인터페이스 관점에서 무엇으로 치환(substitute)되는지를 구한다.
-     */
     private @Nullable PsiClass resolveDomainType(@NotNull PsiClass repositoryInterface) {
         PsiClass marker = JavaPsiFacade.getInstance(repositoryInterface.getProject())
             .findClass(SPRING_DATA_REPOSITORY, repositoryInterface.getResolveScope());
         if (marker == null || marker.getTypeParameters().length == 0) {
             return null;
         }
-
         PsiSubstitutor substitutor =
             TypeConversionUtil.getClassSubstitutor(marker, repositoryInterface, PsiSubstitutor.EMPTY);
         if (substitutor == null) {
             return null;
         }
-
         PsiType domainType = substitutor.substitute(marker.getTypeParameters()[0]);
         return PsiUtil.resolveClassInClassTypeOnly(domainType);
     }
 
-    /** 엔티티의 (상속 포함) 필드 중 JPA 연관 애노테이션이 붙은 것들을 엣지로 수집. */
-    private @NotNull List<FetchEdge> collectAssociations(@NotNull PsiClass entity) {
-        List<FetchEdge> edges = new ArrayList<>();
-        for (PsiField field : entity.getAllFields()) {
-            Association assoc = associationOf(field);
-            if (assoc == null) {
-                continue;
-            }
-            String targetName = assoc.target() != null ? assoc.target().getName() : "?";
-            edges.add(new FetchEdge(field.getName(), targetName, assoc.color()));
-        }
-        return edges;
-    }
-
-    /** 필드 하나가 연관이면 (색, 대상 엔티티) 를, 아니면 null. */
+    /** 필드가 연관이면 (카디널리티, 매핑상 EAGER 인지, 대상 엔티티) 를, 아니면 null. */
     private @Nullable Association associationOf(@NotNull PsiField field) {
         PsiAnnotation ann;
+        RelationKind kind;
         boolean toMany;
         boolean defaultEager;
 
         if ((ann = find(field, MANY_TO_ONE)) != null) {
-            toMany = false;
-            defaultEager = true;   // @ManyToOne 기본 EAGER
+            kind = RelationKind.MANY_TO_ONE;  toMany = false; defaultEager = true;
         } else if ((ann = find(field, ONE_TO_ONE)) != null) {
-            toMany = false;
-            defaultEager = true;   // @OneToOne 기본 EAGER
+            kind = RelationKind.ONE_TO_ONE;   toMany = false; defaultEager = true;
         } else if ((ann = find(field, ONE_TO_MANY)) != null) {
-            toMany = true;
-            defaultEager = false;  // @OneToMany 기본 LAZY
+            kind = RelationKind.ONE_TO_MANY;  toMany = true;  defaultEager = false;
         } else if ((ann = find(field, MANY_TO_MANY)) != null) {
-            toMany = true;
-            defaultEager = false;  // @ManyToMany 기본 LAZY
+            kind = RelationKind.MANY_TO_MANY; toMany = true;  defaultEager = false;
         } else {
             return null;
         }
 
-        FetchColor color = fetchColor(ann, defaultEager);
-        // to-one 은 필드 타입 자체가 엔티티, to-many 는 Collection<Entity> 의 첫 타입 인자.
+        boolean eager = fetchEager(ann, defaultEager);
         PsiClass target = toMany
             ? firstTypeArgClass(field.getType())
             : PsiUtil.resolveClassInClassTypeOnly(field.getType());
-        return new Association(color, target);
+        return new Association(kind, eager, target, readMappedBy(ann));
     }
 
-    /** 애노테이션의 fetch 속성(명시값) 을 읽어 색으로. 못 읽으면 매핑 규칙 기본값을 쓴다. */
-    private @NotNull FetchColor fetchColor(@NotNull PsiAnnotation ann, boolean defaultEager) {
+    /** 연관 애노테이션의 mappedBy 값 (비어 있으면 null = owning 측). */
+    private @Nullable String readMappedBy(@NotNull PsiAnnotation ann) {
+        String value = literalString(ann.findAttributeValue("mappedBy"));
+        return (value == null || value.isEmpty()) ? null : value;
+    }
+
+    /** fetch 명시값이 있으면 그걸, 없으면 매핑 규칙 기본값. */
+    private boolean fetchEager(@NotNull PsiAnnotation ann, boolean defaultEager) {
         PsiAnnotationMemberValue value = ann.findAttributeValue("fetch");
         String text = value != null ? value.getText() : null;
-        boolean eager;
         if (text != null && text.contains("EAGER")) {
-            eager = true;
-        } else if (text != null && text.contains("LAZY")) {
-            eager = false;
-        } else {
-            eager = defaultEager;
+            return true;
         }
-        return eager ? FetchColor.EAGER : FetchColor.LAZY;
+        if (text != null && text.contains("LAZY")) {
+            return false;
+        }
+        return defaultEager;
     }
 
-    /** 이 메서드가 명시적으로 당기는 연관 이름들 (@EntityGraph attributePaths + @Query join fetch). */
+    /** 이 메서드가 당기는 연관 경로들 (@EntityGraph attributePaths + @Query join fetch). */
     private @NotNull Set<String> fetchOverrides(@NotNull PsiMethod method) {
-        Set<String> result = new HashSet<>();
-        result.addAll(entityGraphPaths(method));
-        result.addAll(queryJoinFetchPaths(method));
-        return result;
+        Set<String> paths = new HashSet<>();
+        addEntityGraphPaths(method, paths);
+        addQueryJoinFetchPaths(method, paths);
+        return paths;
     }
 
-    /** @EntityGraph(attributePaths = {"team", "orders.items"}) 의 각 경로 첫 세그먼트. */
-    private @NotNull Set<String> entityGraphPaths(@NotNull PsiMethod method) {
-        Set<String> result = new HashSet<>();
+    private void addEntityGraphPaths(@NotNull PsiMethod method, @NotNull Set<String> out) {
         PsiAnnotation ann = method.getAnnotation(ENTITY_GRAPH);
         if (ann == null) {
-            return result;
+            return;
         }
         PsiAnnotationMemberValue paths = ann.findAttributeValue("attributePaths");
         if (paths == null) {
-            return result;
+            return;
         }
         for (String path : stringValues(paths)) {
-            String seg = firstSegment(path);
-            if (!seg.isEmpty()) {
-                result.add(seg);
-            }
+            addWithPrefixes(out, path);
         }
-        return result;
     }
 
-    /** @Query 의 JPQL 에서 "join fetch <별칭>.<연관>" 의 연관 이름들. native query 는 제외. */
-    private @NotNull Set<String> queryJoinFetchPaths(@NotNull PsiMethod method) {
-        Set<String> result = new HashSet<>();
+    private void addQueryJoinFetchPaths(@NotNull PsiMethod method, @NotNull Set<String> out) {
         PsiAnnotation ann = method.getAnnotation(QUERY);
         if (ann == null) {
-            return result;
+            return;
         }
         PsiAnnotationMemberValue nativeVal = ann.findAttributeValue("nativeQuery");
         if (nativeVal != null && "true".equals(nativeVal.getText())) {
-            return result; // native SQL 은 분석 대상 아님
+            return; // native SQL 은 분석 대상 아님
         }
-        PsiAnnotationMemberValue value = ann.findAttributeValue("value");
-        String jpql = value != null ? literalString(value) : null;
+        String jpql = literalString(ann.findAttributeValue("value"));
         if (jpql == null) {
-            return result;
+            return;
         }
-        Matcher matcher = JOIN_FETCH.matcher(jpql);
-        while (matcher.find()) {
-            result.add(matcher.group(1));
+
+        // 별칭 → 뿌리 기준 점 경로. 루트 별칭은 빈 경로("").
+        Map<String, String> aliasPath = new HashMap<>();
+        Matcher from = FROM.matcher(jpql);
+        if (from.find()) {
+            aliasPath.put(from.group(1), "");
         }
-        return result;
+
+        Matcher jf = JOIN_FETCH.matcher(jpql);
+        while (jf.find()) {
+            String srcAlias = jf.group(1);
+            String assoc = jf.group(2);
+            String newAlias = jf.group(3);
+
+            String base = aliasPath.getOrDefault(srcAlias, "");
+            String fullPath = base.isEmpty() ? assoc : base + "." + assoc;
+            addWithPrefixes(out, fullPath);
+
+            if (newAlias != null && !JPQL_KEYWORDS.contains(newAlias.toLowerCase())) {
+                aliasPath.put(newAlias, fullPath);
+            }
+        }
     }
 
-    /** 배열이든 단일이든 문자열 리터럴 값들을 모은다. */
+    /** "equipment.serial" → {"equipment", "equipment.serial"} 를 set 에 추가. */
+    private void addWithPrefixes(@NotNull Set<String> set, @NotNull String path) {
+        StringBuilder cur = new StringBuilder();
+        for (String part : path.split("\\.")) {
+            if (part.isEmpty()) {
+                continue;
+            }
+            if (cur.length() > 0) {
+                cur.append('.');
+            }
+            cur.append(part);
+            set.add(cur.toString());
+        }
+    }
+
     private @NotNull List<String> stringValues(@NotNull PsiAnnotationMemberValue value) {
         List<String> out = new ArrayList<>();
         if (value instanceof PsiArrayInitializerMemberValue array) {
@@ -253,7 +312,6 @@ public final class RepositoryMethodAnalyzer {
         return out;
     }
 
-    /** 문자열 리터럴(텍스트 블록 포함)이면 그 값을, 아니면 null. */
     private @Nullable String literalString(@Nullable PsiAnnotationMemberValue value) {
         if (value instanceof PsiLiteralExpression literal && literal.getValue() instanceof String s) {
             return s;
@@ -261,13 +319,6 @@ public final class RepositoryMethodAnalyzer {
         return null;
     }
 
-    /** "orders.items" → "orders" (첫 세그먼트). */
-    private @NotNull String firstSegment(@NotNull String path) {
-        int dot = path.indexOf('.');
-        return dot < 0 ? path : path.substring(0, dot);
-    }
-
-    /** Collection<Entity> 타입에서 첫 타입 인자(Entity) 를 해석. */
     private @Nullable PsiClass firstTypeArgClass(@Nullable PsiType type) {
         if (type instanceof PsiClassType classType) {
             PsiType[] args = classType.getParameters();
@@ -278,7 +329,6 @@ public final class RepositoryMethodAnalyzer {
         return null;
     }
 
-    /** 여러 후보 FQN 중 실제로 붙어 있는 애노테이션을 반환. */
     private @Nullable PsiAnnotation find(@NotNull PsiField field, @NotNull String[] fqns) {
         for (String fqn : fqns) {
             PsiAnnotation ann = field.getAnnotation(fqn);
@@ -289,6 +339,10 @@ public final class RepositoryMethodAnalyzer {
         return null;
     }
 
-    private record Association(FetchColor color, PsiClass target) {
+    private record Association(RelationKind kind, boolean eager, PsiClass target, String mappedBy) {
+    }
+
+    /** 자식 엔티티로 내려오게 한 상위 연관 정보 (진짜 역참조 판정용). */
+    private record Trace(String parentQName, String assocName, String assocMappedBy) {
     }
 }
