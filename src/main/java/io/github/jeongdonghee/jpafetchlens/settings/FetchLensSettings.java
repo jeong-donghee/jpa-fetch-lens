@@ -21,6 +21,8 @@ public final class FetchLensSettings implements PersistentStateComponent<FetchLe
         public String lazyHex = FetchColor.LAZY.hex();
         public String eagerHex = FetchColor.EAGER.hex();
         public String fetchJoinedHex = FetchColor.FETCH_JOINED.hex();
+        public String saveCascadeHex = FetchColor.SAVE_CASCADE.hex();
+        public String deleteCascadeHex = FetchColor.DELETE_CASCADE.hex();
     }
 
     private State state = new State();
@@ -45,6 +47,8 @@ public final class FetchLensSettings implements PersistentStateComponent<FetchLe
             case LAZY -> state.lazyHex;
             case EAGER -> state.eagerHex;
             case FETCH_JOINED -> state.fetchJoinedHex;
+            case SAVE_CASCADE -> state.saveCascadeHex;
+            case DELETE_CASCADE -> state.deleteCascadeHex;
             case UNKNOWN -> null;
         };
         return (value == null || value.isBlank()) ? color.hex() : value;
