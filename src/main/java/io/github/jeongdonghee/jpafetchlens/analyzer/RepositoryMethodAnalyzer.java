@@ -60,7 +60,16 @@ public final class RepositoryMethodAnalyzer {
     private static final int MAX_DEPTH = 10;
 
     public @Nullable FetchGraph analyze(@NotNull PsiMethod method) {
-        PsiClass repositoryInterface = repositoryInterfaceOf(method);
+        return analyze(method, null);
+    }
+
+    /**
+     * @param contextRepository hover 지점의 구체 리포지토리(호출식 한정자 타입). 기본 메서드
+     *                          (findById/findAll/save 등)는 선언 클래스가 Spring Data 내장
+     *                          인터페이스라 도메인 타입이 안 풀리므로, 이 문맥으로 구체 타입을 얻는다.
+     */
+    public @Nullable FetchGraph analyze(@NotNull PsiMethod method, @Nullable PsiClass contextRepository) {
+        PsiClass repositoryInterface = pickRepository(method, contextRepository);
         if (repositoryInterface == null) {
             return null;
         }
@@ -149,15 +158,33 @@ public final class RepositoryMethodAnalyzer {
         return trace.assocName() != null && fieldMappedBy != null && fieldMappedBy.equals(trace.assocName());
     }
 
-    private @Nullable PsiClass repositoryInterfaceOf(@NotNull PsiMethod method) {
+    /**
+     * 분석 기준이 될 리포지토리 인터페이스를 고른다.
+     *
+     * <p>문맥(호출 지점) 리포지토리에서 도메인 타입이 실제로 풀리면 그걸 우선한다. 기본 메서드
+     * (findById 등)는 선언 클래스가 {@code CrudRepository<T,ID>} 라 T 를 구체 엔티티로 못 풀지만,
+     * 호출식 {@code customerRepository.findById(..)} 의 한정자 타입인 구체 리포지토리에선 풀린다.
+     * 문맥이 없거나 부적합하면(예: 리포지토리 인터페이스 안에서 직접 메서드에 hover) 선언 클래스로 대체.
+     */
+    private @Nullable PsiClass pickRepository(@NotNull PsiMethod method, @Nullable PsiClass contextRepository) {
+        if (isRepositoryWithDomainType(contextRepository)) {
+            return contextRepository;
+        }
         PsiClass containing = method.getContainingClass();
-        if (containing == null || !containing.isInterface()) {
-            return null;
+        if (isRepository(containing)) {
+            return containing;
         }
-        if (!InheritanceUtil.isInheritor(containing, SPRING_DATA_REPOSITORY)) {
-            return null;
-        }
-        return containing;
+        return null;
+    }
+
+    private boolean isRepository(@Nullable PsiClass candidate) {
+        return candidate != null
+            && candidate.isInterface()
+            && InheritanceUtil.isInheritor(candidate, SPRING_DATA_REPOSITORY);
+    }
+
+    private boolean isRepositoryWithDomainType(@Nullable PsiClass candidate) {
+        return isRepository(candidate) && resolveDomainType(candidate) != null;
     }
 
     private @Nullable PsiClass resolveDomainType(@NotNull PsiClass repositoryInterface) {

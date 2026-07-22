@@ -39,6 +39,9 @@
 
     <change-notes><![CDATA[
         <ul>
+          <li><b>0.1.1</b> — Fix: inherited repository methods (<code>findById</code>,
+              <code>findAll</code>, <code>save</code>, …) now show the fetch tree too. Previously only
+              methods declared directly in the repository interface did.</li>
           <li><b>0.1.0</b> — Initial release. Per-method fetch tree on hover, color coding by
               effective fetch, <code>@Query</code> join fetch and <code>@EntityGraph</code> detection,
               non-owning <code>@OneToOne</code> LAZY pitfall warning, and configurable colors.</li>

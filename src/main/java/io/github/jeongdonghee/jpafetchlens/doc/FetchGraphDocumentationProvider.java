@@ -2,8 +2,12 @@ package io.github.jeongdonghee.jpafetchlens.doc;
 
 import com.intellij.lang.documentation.AbstractDocumentationProvider;
 import com.intellij.lang.java.JavaDocumentationProvider;
+import com.intellij.psi.PsiClass;
 import com.intellij.psi.PsiElement;
+import com.intellij.psi.PsiExpression;
 import com.intellij.psi.PsiMethod;
+import com.intellij.psi.PsiReferenceExpression;
+import com.intellij.psi.util.PsiUtil;
 import io.github.jeongdonghee.jpafetchlens.analyzer.RepositoryMethodAnalyzer;
 import io.github.jeongdonghee.jpafetchlens.model.FetchColor;
 import io.github.jeongdonghee.jpafetchlens.model.FetchEdge;
@@ -39,7 +43,8 @@ public final class FetchGraphDocumentationProvider extends AbstractDocumentation
         if (!(element instanceof PsiMethod method)) {
             return null;
         }
-        FetchGraph graph = analyzer.analyze(method);
+        // 호출 지점의 구체 리포지토리를 넘겨, findById 같은 상속 기본 메서드도 도메인 타입을 얻게 한다.
+        FetchGraph graph = analyzer.analyze(method, callSiteRepository(originalElement));
         if (graph == null) {
             return null; // repository 메서드가 아니면 기본 문서에 맡긴다.
         }
@@ -48,6 +53,27 @@ public final class FetchGraphDocumentationProvider extends AbstractDocumentation
             : javaDoc.generateDoc(element, originalElement);
         String section = renderFetchSection(graph);
         return base == null ? section : base + section;
+    }
+
+    /**
+     * hover 지점이 {@code repo.findById(..)} 같은 호출식이면, 한정자({@code repo})의 타입인
+     * 구체 리포지토리를 돌려준다. 상속 기본 메서드는 선언 클래스(CrudRepository)만으론 엔티티를
+     * 못 풀기에, 이 문맥이 있어야 한다. 한정자가 없거나(리포지토리 내부에서 직접 hover) 타입이
+     * 안 풀리면 null.
+     */
+    private @Nullable PsiClass callSiteRepository(@Nullable PsiElement originalElement) {
+        if (originalElement == null) {
+            return null;
+        }
+        PsiElement parent = originalElement.getParent();
+        if (!(parent instanceof PsiReferenceExpression ref)) {
+            return null;
+        }
+        PsiExpression qualifier = ref.getQualifierExpression();
+        if (qualifier == null) {
+            return null;
+        }
+        return PsiUtil.resolveClassInClassTypeOnly(qualifier.getType());
     }
 
     private String renderFetchSection(FetchGraph graph) {
