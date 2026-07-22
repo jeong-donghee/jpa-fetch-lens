@@ -20,6 +20,8 @@ public final class FetchLensConfigurable implements Configurable {
     private ColorPanel lazyColor;
     private ColorPanel eagerColor;
     private ColorPanel fetchColor;
+    private ColorPanel saveColor;
+    private ColorPanel deleteColor;
 
     @Override
     public @Nls String getDisplayName() {
@@ -31,10 +33,14 @@ public final class FetchLensConfigurable implements Configurable {
         lazyColor = new ColorPanel();
         eagerColor = new ColorPanel();
         fetchColor = new ColorPanel();
+        saveColor = new ColorPanel();
+        deleteColor = new ColorPanel();
         JPanel panel = FormBuilder.createFormBuilder()
-            .addLabeledComponent("LAZY 색:", lazyColor)
-            .addLabeledComponent("EAGER 색:", eagerColor)
-            .addLabeledComponent("FETCH 색:", fetchColor)
+            .addLabeledComponent("LAZY (read):", lazyColor)
+            .addLabeledComponent("EAGER (read):", eagerColor)
+            .addLabeledComponent("FETCH (read):", fetchColor)
+            .addLabeledComponent("Save cascade:", saveColor)
+            .addLabeledComponent("Delete cascade:", deleteColor)
             .addComponentFillVertically(new JPanel(), 0)
             .getPanel();
         reset();
@@ -46,7 +52,9 @@ public final class FetchLensConfigurable implements Configurable {
         FetchLensSettings.State s = FetchLensSettings.getInstance().getState();
         return changed(lazyColor, s.lazyHex)
             || changed(eagerColor, s.eagerHex)
-            || changed(fetchColor, s.fetchJoinedHex);
+            || changed(fetchColor, s.fetchJoinedHex)
+            || changed(saveColor, s.saveCascadeHex)
+            || changed(deleteColor, s.deleteCascadeHex);
     }
 
     @Override
@@ -55,6 +63,8 @@ public final class FetchLensConfigurable implements Configurable {
         s.lazyHex = hexOf(lazyColor, FetchColor.LAZY);
         s.eagerHex = hexOf(eagerColor, FetchColor.EAGER);
         s.fetchJoinedHex = hexOf(fetchColor, FetchColor.FETCH_JOINED);
+        s.saveCascadeHex = hexOf(saveColor, FetchColor.SAVE_CASCADE);
+        s.deleteCascadeHex = hexOf(deleteColor, FetchColor.DELETE_CASCADE);
     }
 
     @Override
@@ -63,6 +73,8 @@ public final class FetchLensConfigurable implements Configurable {
         lazyColor.setSelectedColor(toColor(s.lazyHex, FetchColor.LAZY));
         eagerColor.setSelectedColor(toColor(s.eagerHex, FetchColor.EAGER));
         fetchColor.setSelectedColor(toColor(s.fetchJoinedHex, FetchColor.FETCH_JOINED));
+        saveColor.setSelectedColor(toColor(s.saveCascadeHex, FetchColor.SAVE_CASCADE));
+        deleteColor.setSelectedColor(toColor(s.deleteCascadeHex, FetchColor.DELETE_CASCADE));
     }
 
     private boolean changed(ColorPanel panel, String savedHex) {

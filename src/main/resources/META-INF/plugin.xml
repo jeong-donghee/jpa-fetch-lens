@@ -4,31 +4,45 @@
     <vendor email="weg9511@gmail.com" url="https://github.com/jeong-donghee">eehgnod</vendor>
 
     <description><![CDATA[
-        <p><img src="https://cdn.jsdelivr.net/gh/jeong-donghee/jpa-fetch-lens@main/docs/shot-full.png" width="640" alt="JPA Fetch Lens shows a color-coded fetch tree when you hover over a repository method"></p>
+        <p><img src="https://cdn.jsdelivr.net/gh/jeong-donghee/jpa-fetch-lens@main/docs/shot-fetch.png" width="640" alt="JPA Fetch Lens shows a color-coded fetch tree when you hover over a repository method"></p>
 
-        Hover over a Spring Data JPA repository method to see which associated entities that
-        query actually loads — shown as a color-coded tree right below the method's Java
-        documentation. What the method name hides — N+1 risks, over-fetching, or a LAZY field
-        that is loaded eagerly anyway — becomes visible without leaving the editor.
+        Hover over a Spring Data JPA repository method to see how far its effect reaches across
+        your entity graph — shown as a color-coded tree right below the method's Java
+        documentation. Read methods show what the query <b>loads</b>; <code>save</code> and
+        <code>delete</code> show what <b>cascades</b> along with them. What the method name hides —
+        N+1 risks, a LAZY field loaded eagerly anyway, or a delete that quietly removes children —
+        becomes visible without leaving the editor.
 
         <ul>
-          <li><b>Per-method fetch tree</b> — the queried entity and the associations that get
-              loaded, nested by what is actually fetched.</li>
-          <li><b>Color-coded by effective fetch:</b> green = pulled by this query
-              (<code>join fetch</code> / <code>@EntityGraph</code>), yellow = EAGER mapping,
-              red = LAZY (proxy, potential N+1).</li>
+          <li><b>Read methods — fetch tree:</b> the queried entity and the associations that get
+              loaded. Green = pulled by this query (<code>join fetch</code> / <code>@EntityGraph</code>),
+              yellow = EAGER mapping, red = LAZY (proxy, potential N+1).</li>
+          <li><b>save — cascade tree:</b> associations cascaded by <code>PERSIST</code> /
+              <code>MERGE</code> are shown in blue and expanded; the rest are gray.</li>
+          <li><b>delete — cascade tree:</b> associations cascaded by <code>REMOVE</code> or
+              <code>orphanRemoval</code> are shown in orange and expanded, so a surprise cascading
+              delete is visible before you run it.</li>
+          <li><b>Skips what loads nothing:</b> <code>count</code>, <code>exists</code>, and
+              scalar / DTO projections show no tree — decided by the method's <b>return type</b>,
+              not its name, so a <code>findBy…</code> that actually runs a <code>count</code> is
+              handled correctly.</li>
           <li><b>Reads mappings and query together:</b>
               <code>@ManyToOne</code>/<code>@OneToOne</code>/<code>@OneToMany</code>/<code>@ManyToMany</code>
               (Jakarta and javax), <code>@Query</code> <code>join fetch</code> with alias resolution,
               and <code>@EntityGraph(attributePaths)</code>.</li>
-          <li><b>Expands what is loaded</b> — eagerly loaded or fetched associations are expanded
-              to their own associations, so you follow the real object graph one hover deep.</li>
           <li><b>Flags a pitfall</b> — a non-owning <code>@OneToOne</code> declared
               <code>LAZY</code> is loaded EAGER by Hibernate, and is marked accordingly.</li>
           <li><b>Back-references</b> to an already-loaded parent are shown without color, since
               navigating to them triggers no extra query.</li>
-          <li><b>Configurable colors</b> under Settings | Tools | JPA Fetch Lens.</li>
+          <li><b>Configurable colors</b> — all five (LAZY / EAGER / FETCH / save cascade /
+              delete cascade) under Settings | Tools | JPA Fetch Lens.</li>
         </ul>
+
+        <p>On <code>save</code>, the cascade tree (blue):
+        <img src="https://cdn.jsdelivr.net/gh/jeong-donghee/jpa-fetch-lens@main/docs/shot-save.png" width="560" alt="save shows a blue cascade tree of PERSIST/MERGE associations"></p>
+
+        <p>On <code>delete</code>, the cascade tree (orange):
+        <img src="https://cdn.jsdelivr.net/gh/jeong-donghee/jpa-fetch-lens@main/docs/shot-delete.png" width="560" alt="delete shows an orange cascade tree of REMOVE/orphanRemoval associations"></p>
 
         Cardinality is shown as N-1, 1-N, 1-1, N-M. Works in IntelliJ IDEA Community and Ultimate;
         it relies on Java PSI, so no dedicated JPA plugin is required — just a project with JPA
@@ -39,6 +53,12 @@
 
     <change-notes><![CDATA[
         <ul>
+          <li><b>0.2.0</b> — <code>save</code> and <code>delete</code> now show a <b>cascade tree</b>
+              (what gets persisted / removed along with the entity, including
+              <code>orphanRemoval</code>), not a fetch tree — in their own colors (save = blue,
+              delete = orange by default, both configurable). Method type is decided by
+              <b>return type</b>, so <code>count</code> / <code>exists</code> / scalar and DTO
+              projections correctly show no tree even when named <code>findBy…</code>.</li>
           <li><b>0.1.1</b> — Fix: inherited repository methods (<code>findById</code>,
               <code>findAll</code>, <code>save</code>, …) now show the fetch tree too. Previously only
               methods declared directly in the repository interface did.</li>
